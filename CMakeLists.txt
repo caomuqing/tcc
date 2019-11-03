@@ -14,15 +14,14 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   mav_msgs
+  dynamic_reconfigure
 )
 
 find_package(Eigen3 REQUIRED)
 
 set(Eigen3_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIR})
 
-catkin_package(
-  INCLUDE_DIRS include
-)
+
 
 include_directories(
 	include
@@ -34,13 +33,14 @@ include_directories(
 ## Declare ROS dynamic reconfigure parameters ##
 ################################################
 
+generate_dynamic_reconfigure_options(
+   cfg/Param.cfg
+ )
 
-## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
-
+catkin_package(
+  INCLUDE_DIRS include
+  CATKIN_DEPENDS dynamic_reconfigure
+)
 ###################################
 ## catkin specific configuration ##
 ###################################
@@ -75,15 +75,16 @@ include_directories(
 
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(${PROJECT_NAME}_node src/tcc_node.cpp)
+add_executable(${PROJECT_NAME} src/tcc_node.cpp)
 
-# set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
+# set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME node PREFIX "")
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 
 ## Specify libraries to link a library or executable target against
- target_link_libraries(${PROJECT_NAME}_node
+ target_link_libraries(${PROJECT_NAME}
    ${catkin_LIBRARIES}
  )

@@ -8,6 +8,9 @@
 #include <mav_msgs/RollPitchYawrateThrust.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
+#include <tcc/ParamConfig.h>
+#include <dynamic_reconfigure/server.h>
+
 
 ros::Publisher rpyt_command_pub;
 fullstate_t cmd_, current_;
@@ -15,23 +18,31 @@ fullstate_t cmd_, current_;
 void CtrloopCallback(const ros::TimerEvent&);
 void trajectory_cb(const trajectory_msgs::MultiDOFJointTrajectory::ConstPtr& msg);
 void odom_cb(const nav_msgs::Odometry::ConstPtr& msg);
+void Paramcallback(tcc::ParamConfig &config, uint32_t level);
+
 void geoVec3toEigenVec3 (geometry_msgs::Vector3 geoVector3, Eigen::Vector3f& eigenVec3);
 void geoPt3toEigenVec3 (geometry_msgs::Point geoPt3, Eigen::Vector3f& eigenVec3);
 Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current);
 
-Eigen::Vector3f CtrlOmega(1.0, 1.0, 1.3); //norminal natural frequency
+Eigen::Vector3f CtrlOmega(1.0, 1.0, 1.8); //norminal natural frequency
 Eigen::Vector3f CtrlEpsilon(1, 1, 1); //tuning parameter
 Eigen::Vector3f CtrlZita(1, 1, 1.1); //damping ratio
 Eigen::Vector3f PosErrorAccumulated_(0, 0, 0);
-Eigen::Vector3f k_I_(0.02, 0.02, 0.2);
+Eigen::Vector3f k_I_(0.1, 0.1, 0.15);
 mppi_control::InLoopCmdGen InLoopCmdGen_(0.4);
 float posErrAccLimit_ = 15.0, acc_xy_limit_=5.0;
-float k_p_yaw_=0.02;
+float k_p_yaw_=0.2, k_I_yaw_=0.2;
+float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
 
   ros::NodeHandle nh("~");
+
+  dynamic_reconfigure::Server<tcc::ParamConfig> server;
+  dynamic_reconfigure::Server<tcc::ParamConfig>::CallbackType externalfunction;
+  externalfunction = boost::bind(&Paramcallback, _1, _2);
+  server.setCallback(externalfunction);
 
   rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
                                     "/firefly/command/roll_pitch_yawrate_thrust1", 50);
@@ -150,18 +161,41 @@ void CtrloopCallback(const ros::TimerEvent&)
     get_euler_from_R<float>(RefAtti_ned, cmd_R_ned);
     get_euler_from_R(currentAtti_ned, current_R_ned);
     //std::cout<<"current attitide roll: "<<currentAtti_ned(0)/3.14159*180<<"pitch: "<<currentAtti_ned(1)/3.14159*180<<"yaw: "<<currentAtti_ned(2)/3.14159*180<<"\n";
-    mppi_control::InLoopCmdGen::drone_cmd_t in_loop_cmd = InLoopCmdGen_.cal_R_T(tarAcc_ned_, current_R_ned, RefAtti_ned(2));
+    mppi_control::InLoopCmdGen::drone_cmd_t in_loop_cmd = InLoopCmdGen_.cal_R_T(tarAcc_ned_, current_R_ned, currentAtti_ned(2));
     get_euler_from_R(tarAtti_ned, in_loop_cmd.R);
     //std::cout<<"command attitide roll: "<<tarAtti_ned(0)/3.14159*180<<"pitch: "<<tarAtti_ned(1)/3.14159*180<<"yaw: "<<tarAtti_ned(2)/3.14159*180<<"\n";
     std::cout<<"command thrust: "<<in_loop_cmd.T<<"\n";
     mav_msgs::RollPitchYawrateThrust rpyrt_msg;
     rpyrt_msg.roll = tarAtti_ned(0);
     rpyrt_msg.pitch = -tarAtti_ned(1);
-    rpyrt_msg.yaw_rate = wrapPi(-tarAtti_ned(2) + currentAtti_ned(2)) * k_p_yaw_;
+    yawErrorAccum_ += (-RefAtti_ned(2) + currentAtti_ned(2));
+    if (yawErrorAccum_>yawErrorAccumLim_) yawErrorAccum_ = yawErrorAccumLim_;
+    else if (yawErrorAccum_<-yawErrorAccumLim_) yawErrorAccum_ = -yawErrorAccumLim_;
+
+    rpyrt_msg.yaw_rate = wrapPi(-RefAtti_ned(2) + currentAtti_ned(2)) * k_p_yaw_ + yawErrorAccum_*k_I_yaw_;
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
     rpyrt_msg.thrust.z = in_loop_cmd.T;
     rpyt_command_pub.publish(rpyrt_msg);
 
   } else ROS_INFO_ONCE("ref trajectory lagging behind odom time!");
+}
+
+
+void Paramcallback(tcc::ParamConfig &config, uint32_t level)
+{
+
+    CtrlOmega(0) = config.CtrlOmega_xy;
+    CtrlOmega(1) = config.CtrlOmega_xy;
+    CtrlOmega(2) = config.CtrlOmega_z;
+
+    posErrAccLimit_ = config.PosErrorAccumulatedLimit_xyz;
+    k_I_(0) = config.Pos_ki_xy;
+    k_I_(1) = config.Pos_ki_xy;
+    k_I_(2) = config.Pos_ki_z;
+    k_p_yaw_ = config.k_p_yaw_;
+    k_I_yaw_ = config.k_I_yaw_;
+
+    yawErrorAccumLim_ = config.yawErrorAccumLim_;
+
 }
