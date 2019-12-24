@@ -28,9 +28,9 @@ Eigen::Vector3f CtrlOmega(1.0, 1.0, 1.8); //norminal natural frequency
 Eigen::Vector3f CtrlEpsilon(1, 1, 1); //tuning parameter
 Eigen::Vector3f CtrlZita(1, 1, 1.1); //damping ratio
 Eigen::Vector3f PosErrorAccumulated_(0, 0, 0);
-Eigen::Vector3f k_I_(0.1, 0.1, 0.15);
+Eigen::Vector3f k_I_(0.02, 0.02, 0.15);
 mppi_control::InLoopCmdGen InLoopCmdGen_(0.4);
-float posErrAccLimit_ = 15.0, acc_xy_limit_=5.0;
+float posErrAccLimit_ = 10.0, acc_xy_limit_=5.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
 
@@ -79,8 +79,13 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
   current_.timestamp = ros::Time::now();
   geoPt3toEigenVec3(msg->pose.pose.position, current_.pos);
   geoVec3toEigenVec3(msg->twist.twist.linear, current_.vel);
-  Eigen::Quaternion<float> current_Quat(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
-                                        msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
+  tf::Quaternion q0(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
+  tf::Quaternion q1 = tf::createQuaternionFromRPY(3.1415927, 0, 0); //transform from vins imu frame to FLU frame
+  tf::Quaternion qf = q0*q1;
+  Eigen::Quaternion<float> current_Quat(qf.w(), qf.x(), qf.y(), qf.z());
+
+  // Eigen::Quaternion<float> current_Quat(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
+  //                                       msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
   get_dcm_from_q(current_.R, current_Quat);
   ROS_INFO_ONCE("Got first odom message!");
 
@@ -135,7 +140,7 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
 
 void CtrloopCallback(const ros::TimerEvent&)
 {
-  if (fabs((current_.timestamp - cmd_.timestamp).toSec()) < 0.05 && 
+  if (fabs((ros::Time::now() - cmd_.timestamp).toSec()) < 0.05 && 
     (ros::Time::now()-current_.timestamp).toSec()<=0.11){
     //do control
     ROS_INFO_ONCE("started control!");
