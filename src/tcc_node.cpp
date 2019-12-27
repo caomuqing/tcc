@@ -33,6 +33,7 @@ mppi_control::InLoopCmdGen InLoopCmdGen_(0.4);
 float posErrAccLimit_ = 10.0, acc_xy_limit_=5.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
+std::string sim_type_;
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
@@ -43,9 +44,23 @@ int main(int argc, char** argv){
   dynamic_reconfigure::Server<tcc::ParamConfig>::CallbackType externalfunction;
   externalfunction = boost::bind(&Paramcallback, _1, _2);
   server.setCallback(externalfunction);
+  if (!nh.getParam("sim_type", sim_type_)){
+    ROS_WARN("Don't have sim type parameter. Exiting");
+    exit(-1);
+  }
 
-  rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
-                                    "/firefly/command/roll_pitch_yawrate_thrust1", 50);
+  if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="none"){
+    ROS_WARN("not good, don't know in simulation or real flight");
+    exit(-1);
+  }
+  if (sim_type_!="rotors"){
+    rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
+                                      "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
+  } else {
+    rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
+                                      "/firefly/command/roll_pitch_yawrate_thrust", 50);        
+  }
+
 
   ros::Subscriber trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
                                    "/firefly/command/trajectory", 10, trajectory_cb);
@@ -78,15 +93,26 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
 {
   current_.timestamp = ros::Time::now();
   geoPt3toEigenVec3(msg->pose.pose.position, current_.pos);
-  geoVec3toEigenVec3(msg->twist.twist.linear, current_.vel);
-  tf::Quaternion q0(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
-  tf::Quaternion q1 = tf::createQuaternionFromRPY(3.1415927, 0, 0); //transform from vins imu frame to FLU frame
-  tf::Quaternion qf = q0*q1;
-  Eigen::Quaternion<float> current_Quat(qf.w(), qf.x(), qf.y(), qf.z());
-
-  // Eigen::Quaternion<float> current_Quat(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
-  //                                       msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
-  get_dcm_from_q(current_.R, current_Quat);
+  if (sim_type_!="rotors"){ //for real flight or using DJI simulator
+    geoVec3toEigenVec3(msg->twist.twist.linear, current_.vel);
+  } else { //for simulation with ROTORS
+    Eigen::Quaternionf orientation_W_B(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
+                                       msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
+    Eigen::Vector3f velocity_body(msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z);
+    Eigen::Vector3f velocity_world = orientation_W_B *velocity_body;    
+    current_.vel = velocity_world;
+  }
+  if (sim_type_=="none"){ //for real flight using dji
+    tf::Quaternion q0(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
+    tf::Quaternion q1 = tf::createQuaternionFromRPY(3.1415927, 0, 0); //transform from vins imu frame to FLU frame
+    tf::Quaternion qf = q0*q1;
+    Eigen::Quaternion<float> current_Quat(qf.w(), qf.x(), qf.y(), qf.z());
+    get_dcm_from_q(current_.R, current_Quat);
+  } else { //for simulation with ROTORS or DJI simulator
+    Eigen::Quaternion<float> current_Quat(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
+                                          msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);    
+    get_dcm_from_q(current_.R, current_Quat);
+  }
   ROS_INFO_ONCE("Got first odom message!");
 
 }
@@ -180,7 +206,11 @@ void CtrloopCallback(const ros::TimerEvent&)
     rpyrt_msg.yaw_rate = wrapPi(-RefAtti_ned(2) + currentAtti_ned(2)) * k_p_yaw_ + yawErrorAccum_*k_I_yaw_;
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
-    rpyrt_msg.thrust.z = in_loop_cmd.T;
+    if (sim_type_=="rotors"){  //for simulation with ROTORS only
+      rpyrt_msg.thrust.z = in_loop_cmd.T*90;      
+    } else {
+      rpyrt_msg.thrust.z = in_loop_cmd.T;
+    }
     rpyt_command_pub.publish(rpyrt_msg);
 
   } else ROS_INFO_ONCE("ref trajectory lagging behind odom time!");
