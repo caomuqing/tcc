@@ -5,6 +5,7 @@
   <node respawn="false" pkg="tcc" type="tcc" name="tcc" output="screen">
       <param name="frame_id" type="string" value="world" />
       <param name="sim_type" type="string" value="rotors" />
+      <param name="mpc_sim" type="bool" value="false" />
       <remap from="/vins_estimator/odometry" to="/firefly/ground_truth/odometry" />   
   </node>
 </launch>
