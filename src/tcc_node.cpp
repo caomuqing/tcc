@@ -11,8 +11,8 @@
 #include <tcc/ParamConfig.h>
 #include <dynamic_reconfigure/server.h>
 #include <Eigen/Sparse>
-#include "ooqp_eigen_interface/OoqpEigenInterface.hpp"
-#include "ooqp_eigen_interface/ooqpei_gtest_eigen.hpp"
+// #include "ooqp_eigen_interface/OoqpEigenInterface.hpp"
+// #include "ooqp_eigen_interface/ooqpei_gtest_eigen.hpp"
 
 typedef Eigen::Triplet<double> Trip;
 ros::Publisher rpyt_command_pub;
@@ -395,7 +395,7 @@ Eigen::Vector3f mpccontrol()
   Eigen::VectorXd l = Eigen::VectorXd::Constant(3*horizon_N, -10000000);
   Eigen::VectorXd u = Eigen::VectorXd::Constant(3*horizon_N, std::numeric_limits<double>::max());
   Eigen::VectorXd x;
-  bool result = ooqpei::OoqpEigenInterface::solve(Q, c, a, b, E, f, g, l, u, x);
+  //bool result = ooqpei::OoqpEigenInterface::solve(Q, c, a, b, E, f, g, l, u, x);
   //Eigen::MatrixXd U_k = -bigB*bigA.inverse();
   //std::cout<<"solution is "<<x<<"\n";
 

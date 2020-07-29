@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   mav_msgs
   dynamic_reconfigure
-  ooqp_eigen_interface
+  ## ooqp_eigen_interface
 )
 
 find_package(Eigen3 REQUIRED)
