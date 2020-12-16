@@ -12,6 +12,7 @@
 #include <dynamic_reconfigure/server.h>
 #include <Eigen/Sparse>
 #include <sensor_msgs/Joy.h>
+#include <geometry_msgs/Vector3.h>
 // #include "ooqp_eigen_interface/OoqpEigenInterface.hpp"
 // #include "ooqp_eigen_interface/ooqpei_gtest_eigen.hpp"
 
@@ -20,11 +21,13 @@ ros::Publisher rpyt_command_pub;
 ros::Publisher mpc_sim_odom;
 ros::Publisher rpyh_command_pub;
 fullstate_t cmd_, current_;
+double offset_heading_=0.0, offset_altitude_=0.0;
 
 void CtrloopCallback(const ros::TimerEvent&);
 void trajectory_cb(const trajectory_msgs::MultiDOFJointTrajectory::ConstPtr& msg);
 void odom_cb(const nav_msgs::Odometry::ConstPtr& msg);
 void Paramcallback(tcc::ParamConfig &config, uint32_t level);
+void offsets_cb(const geometry_msgs::Vector3::ConstPtr& msg);
 
 void geoVec3toEigenVec3 (geometry_msgs::Vector3 geoVector3, Eigen::Vector3f& eigenVec3);
 void geoPt3toEigenVec3 (geometry_msgs::Point geoPt3, Eigen::Vector3f& eigenVec3);
@@ -36,7 +39,7 @@ Eigen::Vector3f CtrlEpsilon(1, 1, 1); //tuning parameter
 Eigen::Vector3f CtrlZita(1, 1, 1.1); //damping ratio
 Eigen::Vector3f PosErrorAccumulated_(0, 0, 0);
 Eigen::Vector3f k_I_(0.02, 0.02, 0.15);
-mppi_control::InLoopCmdGen InLoopCmdGen_(0.4);
+mppi_control::InLoopCmdGen InLoopCmdGen_(0.4); //for st, hover throttle is roughly 40%
 float posErrAccLimit_ = 10.0, acc_xy_limit_=2.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
@@ -65,7 +68,7 @@ int main(int argc, char** argv){
   }
   nh.getParam("mpc_sim", mpc_sim_);
 
-  if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="none" && sim_type_!="none_st" && sim_type_!="sim_st"){
+  if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && sim_type_!="sim_st"){
     ROS_WARN("not good, don't know in simulation or real flight");
     exit(-1);
   }
@@ -81,9 +84,17 @@ int main(int argc, char** argv){
   }
 
   mpc_sim_odom = nh.advertise<nav_msgs::Odometry>("mpc_sim_odom", 50);
-  ros::Subscriber trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
-                                   "/firefly/command/trajectory", 10, trajectory_cb);
+  ros::Subscriber trajectory_sub;
+  if (sim_type_=="vins_dji"){
+    trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
+                                 "/firefly/command/trajectory_true", 10, trajectory_cb);    
+  } else {
+    trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
+                                 "/firefly/command/trajectory", 10, trajectory_cb);     
+  }
   ros::Subscriber odom_sub = nh.subscribe<nav_msgs::Odometry>("/vins_estimator/odometry", 10, odom_cb);
+
+  ros::Subscriber offset_sub = nh.subscribe<geometry_msgs::Vector3>("/NTU_internal/offsets", 10, offsets_cb);
 
   ros::Timer timer = nh.createTimer(ros::Duration(1.0/10), CtrloopCallback);
 
@@ -116,6 +127,12 @@ void trajectory_cb(const trajectory_msgs::MultiDOFJointTrajectory::ConstPtr& msg
 
 }
 
+void offsets_cb(const geometry_msgs::Vector3::ConstPtr& msg)
+{
+  offset_heading_=msg->x;
+  offset_altitude_=msg->y;
+}
+
 void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
 {
   current_.timestamp = ros::Time::now();
@@ -134,8 +151,9 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
   }
 
   // transforming attitude
-  if (sim_type_=="none"||sim_type_=="none_st"){ //for real flight using dji, attitude transform
-    tf::Quaternion q0(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
+  if (sim_type_=="vins_dji"||sim_type_=="vins_st"){ //for real flight using dji or st drone, using vins, attitude transform
+    tf::Quaternion q0(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, 
+                      msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
     tf::Quaternion q1 = tf::createQuaternionFromRPY(3.1415927, 0, 0); //transform from vins imu frame to FLU frame
     tf::Quaternion qf = q0*q1;
     Eigen::Quaternion<float> current_Quat(qf.w(), qf.x(), qf.y(), qf.z());
@@ -156,14 +174,15 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
 
     //temporarily use mpc_sim_odom message for viewing st odom
     nav_msgs::Odometry odom_sim;
+    odom_sim.header.frame_id = "world";
     odom_sim.header.stamp = ros::Time::now();
     odom_sim.pose.pose.position.x = current_.pos(0);
     odom_sim.pose.pose.position.y = current_.pos(1);
     odom_sim.pose.pose.position.z = current_.pos(2);
-    odom_sim.pose.pose.orientation.x = _current_Quat_enu.x;
-    odom_sim.pose.pose.orientation.y = _current_Quat_enu.y;
-    odom_sim.pose.pose.orientation.z = _current_Quat_enu.z;
-    odom_sim.pose.pose.orientation.w = _current_Quat_enu.w;
+    odom_sim.pose.pose.orientation.x = _current_Quat_enu.x();
+    odom_sim.pose.pose.orientation.y = _current_Quat_enu.y();
+    odom_sim.pose.pose.orientation.z = _current_Quat_enu.z();
+    odom_sim.pose.pose.orientation.w = _current_Quat_enu.w();
     mpc_sim_odom.publish(odom_sim);
             
   }else { //for simulation with ROTORS or DJI simulator, attitude already in body frame ENU/FLU
@@ -212,7 +231,7 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
              cmd.acc(2) +  + k_I_(2)*PosErrorAccumulated_(2) + ONE_G;
 
   std::cout<<"velocity command"<<cmd.vel<<"\n"; 
-  std::cout<<"current velocity"<<current.vel<<"\n"; 
+  // std::cout<<"current velocity"<<current.vel<<"\n"; 
   if (tarAcc(0) >= acc_xy_limit_) tarAcc(0) = acc_xy_limit_;
   else if (tarAcc(0) < -acc_xy_limit_) tarAcc(0) = -acc_xy_limit_;
   if (tarAcc(1) >= acc_xy_limit_) tarAcc(1) = acc_xy_limit_;
@@ -280,9 +299,9 @@ void CtrloopCallback(const ros::TimerEvent&)
     } else {
       rpyrt_msg.thrust.z = in_loop_cmd.T;
     }
-    if (sim_type_!="none_st"&&sim_type_!="sim_st"){
+    if (sim_type_!="vins_st"&&sim_type_!="sim_st"){
       rpyt_command_pub.publish(rpyrt_msg);
-    } else { //set up the control interface for st
+    } else if (sim_type_=="sim_st"){ //set up the control interface for st
       sensor_msgs::Joy rpyh_msg;
       rpyh_msg.axes.push_back(tarAtti_ned(0));
       rpyh_msg.axes.push_back(tarAtti_ned(1));
@@ -291,7 +310,35 @@ void CtrloopCallback(const ros::TimerEvent&)
       float _flag=19;
       rpyh_msg.axes.push_back(_flag);
       rpyh_command_pub.publish(rpyh_msg);
+    } else if (sim_type_=="vins_st") {
+      sensor_msgs::Joy rpyh_msg;
+      rpyh_msg.axes.push_back(tarAtti_ned(0));
+      rpyh_msg.axes.push_back(tarAtti_ned(1));
+      rpyh_msg.axes.push_back(wrapPi(RefAtti_ned(2)+offset_heading_));
+      rpyh_msg.axes.push_back(cmd_.pos(2)+offset_altitude_);
+      float _flag=19;
+      rpyh_msg.axes.push_back(_flag);
+      rpyh_command_pub.publish(rpyh_msg);      
     }
+  } else if ((ros::Time::now()-current_.timestamp).toSec()<=0.11 && sim_type_=="vins_st"){
+      Eigen::Vector3f currentAtti_ned; 
+      Eigen::Matrix3f current_R_ned; 
+      current_R_ned = current_.R;
+      current_R_ned(0,1) = -current_.R(0,1);
+      current_R_ned(0,2) = -current_.R(0,2);
+      current_R_ned(1,0) = -current_.R(1,0);
+      current_R_ned(2,0) = -current_.R(2,0);
+      get_euler_from_R(currentAtti_ned, current_R_ned);
+
+      sensor_msgs::Joy rpyh_msg;
+      rpyh_msg.axes.push_back(00);
+      rpyh_msg.axes.push_back(00);
+      rpyh_msg.axes.push_back(wrapPi(currentAtti_ned(2)+offset_heading_));
+      rpyh_msg.axes.push_back(current_.pos(2)+offset_altitude_);
+      float _flag=19;
+      rpyh_msg.axes.push_back(_flag);
+      rpyh_command_pub.publish(rpyh_msg);
+
   } else if ((ros::Time::now()-current_.timestamp).toSec()<=0.11 && sim_type_=="sim_st"){
       Eigen::Vector3f currentAtti_ned; 
       Eigen::Matrix3f current_R_ned; 
@@ -301,8 +348,6 @@ void CtrloopCallback(const ros::TimerEvent&)
       current_R_ned(1,0) = -current_.R(1,0);
       current_R_ned(2,0) = -current_.R(2,0);
       get_euler_from_R(currentAtti_ned, current_R_ned);
-      // std::cout<< "                                                                 CURRENT NED roll"<< currentAtti_ned(0)/3.1415*180<<"  pitch"<<
-      //           currentAtti_ned(1)/3.1415*180<<"  yaw"<<currentAtti_ned(2)/3.1415*180<<"\n";
 
       sensor_msgs::Joy rpyh_msg;
       rpyh_msg.axes.push_back(00);
