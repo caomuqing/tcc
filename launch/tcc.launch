@@ -7,6 +7,6 @@
       <param name="sim_type" type="string" value="vins_dji" />
       <param name="mpc_sim" type="bool" value="false" />
 <!--       <remap from="/vins_estimator/odometry" to="/NTU_internal/drone_feedback" />    -->
-      <remap from="/vins_estimator/odometry" to="/firefly/ground_truth/odometry" />   
-  </node>
+<!--       <remap from="/vins_estimator/odometry" to="/firefly/ground_truth/odometry" />   
+ -->  </node>
 </launch>

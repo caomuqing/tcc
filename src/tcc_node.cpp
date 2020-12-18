@@ -43,6 +43,7 @@ mppi_control::InLoopCmdGen InLoopCmdGen_(0.4); //for st, hover throttle is rough
 float posErrAccLimit_ = 10.0, acc_xy_limit_=2.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
+float max_roll_pitch_angle_ = 15/180*3.1415927, max_yaw_rate_ = 40/180*3.1415927;
 std::string sim_type_;
 float thrust_;
 //for mpc
@@ -75,7 +76,7 @@ int main(int argc, char** argv){
 
 
   rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("/st_sdk/flight_control_setpoint_generic", 50);
-  if (sim_type_!="rotors"){
+  if (sim_type_!="rotors"&&sim_type_!="vins_dji"){
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
                                       "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
   } else {
@@ -96,7 +97,7 @@ int main(int argc, char** argv){
 
   ros::Subscriber offset_sub = nh.subscribe<geometry_msgs::Vector3>("/NTU_internal/offsets", 10, offsets_cb);
 
-  ros::Timer timer = nh.createTimer(ros::Duration(1.0/10), CtrloopCallback);
+  ros::Timer timer = nh.createTimer(ros::Duration(1.0/20), CtrloopCallback);
 
   //mpccontrol();
   ros::spin();
@@ -115,7 +116,7 @@ void trajectory_cb(const trajectory_msgs::MultiDOFJointTrajectory::ConstPtr& msg
                                     msg->points[0].transforms[0].rotation.y, 
                                     msg->points[0].transforms[0].rotation.z);
   get_dcm_from_q(cmd_.R, cmd_Quat);
-  //std::cout<<"trarget pos x: "<<cmd_.pos(0)<<"y: "<<cmd_.pos(1)<<"z: "<<cmd_.pos(2)<<"\n";
+  //std::cout<<"target pos x: "<<cmd_.pos(0)<<"y: "<<cmd_.pos(1)<<"z: "<<cmd_.pos(2)<<"\n";
   int _n = msg->points.size();
   for (int i=0; i<_n; i++){
     z_reference_(i*3+0, 0) = msg->points[i].transforms[0].translation.x;
@@ -230,7 +231,7 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
              2*CtrlZita(2)*CtrlOmega(2)/CtrlEpsilon(2)*(cmd.vel(2)-current.vel(2)) + 
              cmd.acc(2) +  + k_I_(2)*PosErrorAccumulated_(2) + ONE_G;
 
-  std::cout<<"velocity command"<<cmd.vel<<"\n"; 
+  // std::cout<<"velocity command"<<cmd.vel<<"\n"; 
   // std::cout<<"current velocity"<<current.vel<<"\n"; 
   if (tarAcc(0) >= acc_xy_limit_) tarAcc(0) = acc_xy_limit_;
   else if (tarAcc(0) < -acc_xy_limit_) tarAcc(0) = -acc_xy_limit_;
@@ -285,18 +286,31 @@ void CtrloopCallback(const ros::TimerEvent&)
     //std::cout<<"command attitide roll: "<<tarAtti_ned(0)/3.14159*180<<"pitch: "<<tarAtti_ned(1)/3.14159*180<<"yaw: "<<tarAtti_ned(2)/3.14159*180<<"\n";
     // std::cout<<"command thrust: "<<in_loop_cmd.T<<"\n";
     mav_msgs::RollPitchYawrateThrust rpyrt_msg;
-    rpyrt_msg.roll = tarAtti_ned(0);
-    rpyrt_msg.pitch = -tarAtti_ned(1);
+    float roll_tmp=tarAtti_ned(0);
+    float pitch_tmp=tarAtti_ned(1);
+    if (roll_tmp>max_roll_pitch_angle_) roll_tmp = max_roll_pitch_angle_;
+    else if (roll_tmp<-max_roll_pitch_angle_) roll_tmp = -max_roll_pitch_angle_;
+    if (pitch_tmp>max_roll_pitch_angle_) pitch_tmp = max_roll_pitch_angle_;
+    else if (pitch_tmp<-max_roll_pitch_angle_) pitch_tmp = -max_roll_pitch_angle_;
+
+    rpyrt_msg.roll = roll_tmp;
+    rpyrt_msg.pitch = -pitch_tmp;
     yawErrorAccum_ += (-RefAtti_ned(2) + currentAtti_ned(2));
     if (yawErrorAccum_>yawErrorAccumLim_) yawErrorAccum_ = yawErrorAccumLim_;
     else if (yawErrorAccum_<-yawErrorAccumLim_) yawErrorAccum_ = -yawErrorAccumLim_;
 
-    rpyrt_msg.yaw_rate = wrapPi(-RefAtti_ned(2) + currentAtti_ned(2)) * k_p_yaw_ + yawErrorAccum_*k_I_yaw_;
+    float yaw_rate_tmp=wrapPi(-RefAtti_ned(2) + currentAtti_ned(2)) * k_p_yaw_ + yawErrorAccum_*k_I_yaw_;
+    if (yaw_rate_tmp>max_yaw_rate_) yaw_rate_tmp = max_yaw_rate_;
+    else if (yaw_rate_tmp<-max_yaw_rate_) yaw_rate_tmp = -max_yaw_rate_;
+
+    rpyrt_msg.yaw_rate = yaw_rate_tmp;
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
     if (sim_type_=="rotors"){  //for simulation with ROTORS only
       rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
-    } else {
+    } else if (sim_type_=="vins_dji"){
+      rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
+    }else {
       rpyrt_msg.thrust.z = in_loop_cmd.T;
     }
     if (sim_type_!="vins_st"&&sim_type_!="sim_st"){
@@ -381,6 +395,8 @@ void Paramcallback(tcc::ParamConfig &config, uint32_t level)
     thrust_ = config.thrust_;
     cost_v_ =  config.mpc_vel_weight_;
     yawErrorAccumLim_ = config.yawErrorAccumLim_;
+    max_roll_pitch_angle_ = config.max_angle_/180*3.1415927;
+    max_yaw_rate_ = config.max_yaw_rate_/180*3.1415927;
 
 }
 
@@ -546,7 +562,7 @@ Eigen::Vector3f mpccontrol()
     mpc_sim_odom.publish(odom_sim);
   }
   if (sim_type_!="sim_st"){
-    std::cout<<"trarget acc x: "<<tarAcc(0)<<"y: "<<tarAcc(1)<<"z: "<<tarAcc(2)<<"\n";
+    std::cout<<"target acc x: "<<tarAcc(0)<<"y: "<<tarAcc(1)<<"z: "<<tarAcc(2)<<"\n";
   }
   return tarAcc;
 }
