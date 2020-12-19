@@ -374,7 +374,7 @@ void CtrloopCallback(const ros::TimerEvent&)
 
   } else if(mpc_sim_){
     mpccontrol();
-  } else ROS_INFO("ref trajectory lagging behind odom time!");
+  } else ROS_INFO_ONCE("ref trajectory lagging behind odom time!");
 }
 
 
