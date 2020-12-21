@@ -309,7 +309,8 @@ void CtrloopCallback(const ros::TimerEvent&)
     if (sim_type_=="rotors"){  //for simulation with ROTORS only
       rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
     } else if (sim_type_=="vins_dji"){
-      rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
+      //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
+      rpyrt_msg.thrust.z= 0.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
     }else {
       rpyrt_msg.thrust.z = in_loop_cmd.T;
     }
