@@ -220,7 +220,8 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
     if (PosErrorAccumulated_(i)>posErrAccLimit_) PosErrorAccumulated_(i) = posErrAccLimit_;
     else if (PosErrorAccumulated_(i)<-posErrAccLimit_) PosErrorAccumulated_(i) = -posErrAccLimit_;
   }
-  Eigen::Vector3f tarAcc;
+  Eigen::Vector3f tarAcc(0,0,0);
+
   tarAcc(0) = pow(CtrlOmega(0)/CtrlEpsilon(0), 2)*(cmd.pos(0)-current.pos(0)) +
              2*CtrlZita(0)*CtrlOmega(0)/CtrlEpsilon(0)*(cmd.vel(0)-current.vel(0)) + 
              cmd.acc(0) + k_I_(0)*PosErrorAccumulated_(0);
@@ -239,8 +240,24 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
   else if (tarAcc(1) < -acc_xy_limit_) tarAcc(1) = -acc_xy_limit_;
   if (tarAcc(2) >= 2.0*ONE_G) tarAcc(2) = 2.0*ONE_G;
   else if (tarAcc(2) < 0.3*ONE_G) tarAcc(2) = 0.3*ONE_G;
+  // std::cout <<"------------------cmd-----------------\n ";
+  // std::cout<<"target pos x: "<<cmd.pos(0)<<"y: "<<cmd.pos(1)<<"z: "<<cmd.pos(2)<<"\n";
+  // std::cout<<"target vel x: "<<cmd.vel(0)<<"y: "<<cmd.vel(1)<<"z: "<<cmd.vel(2)<<"\n";
+  // std::cout<<"target acc x: "<<cmd.acc(0)<<"y: "<<cmd.acc(1)<<"z: "<<cmd.acc(2)<<"\n";
+  // std::cout<<"\n";
+  // std::cout <<"------------------current-----------------\n ";
+  // std::cout<<"current pos x: "<<current.pos(0)<<"y: "<<current.pos(1)<<"z: "<<current.pos(2)<<"\n";
+  // std::cout<<"current vel x: "<<current.vel(0)<<"y: "<<current.vel(1)<<"z: "<<current.vel(2)<<"\n";
+  // std::cout<<"\n";
+
+  // if (std::isnan(tarAcc(0))||std::isnan(tarAcc(1))||std::isnan(tarAcc(2))){
+  //   tarAcc.setZero();
+  //   std::cout<<"target acc becomes NAN!!\n";
+  // }
   if (sim_type_=="sim_st"){
+    std::cout <<"------------------target acc final-----------------\n ";
     std::cout<<"trarget acc x: "<<tarAcc(0)<<"y: "<<tarAcc(1)<<"z: "<<tarAcc(2)<<"\n";
+    std::cout<<"\n";
   }
   return tarAcc;
 }
@@ -248,7 +265,8 @@ Eigen::Vector3f prtcontrol(fullstate_t& cmd, fullstate_t& current)
 void CtrloopCallback(const ros::TimerEvent&)
 {
   if (fabs((ros::Time::now() - cmd_.timestamp).toSec()) < 0.1 && 
-    (ros::Time::now()-current_.timestamp).toSec()<=0.11){
+    (ros::Time::now()-current_.timestamp).toSec()<=0.11 && 
+    !std::isnan(cmd_.pos(0)) && !std::isnan(current_.pos(0))){
     //do control
     ROS_INFO_ONCE("started control!");
     Eigen::Vector3f tarAcc_ = prtcontrol(cmd_, current_);
@@ -276,7 +294,7 @@ void CtrloopCallback(const ros::TimerEvent&)
     get_euler_from_R(_rpy_c, current_.R);
     get_euler_from_R(_rpy_d, cmd_.R);
     // std::cout<< "CURRENT  roll"<< _rpy_c(0)/3.1415*180<<"  pitch"<<_rpy_c(1)/3.1415*180<<"  yaw"<<_rpy_c(2)/3.1415*180<<"\n";
-    // std::cout<< "DESIRED  roll"<< _rpy_d(0)/3.1415*180<<"  pitch"<<_rpy_d(1)/3.1415*180<<"  yaw"<<_rpy_d(2)/3.1415*180<<"\n";
+    //std::cout<< "DESIRED  roll"<< _rpy_d(0)/3.1415*180<<"  pitch"<<_rpy_d(1)/3.1415*180<<"  yaw"<<_rpy_d(2)/3.1415*180<<"\n";
 
     get_euler_from_R<float>(RefAtti_ned, cmd_R_ned);
     get_euler_from_R(currentAtti_ned, current_R_ned);
@@ -563,7 +581,7 @@ Eigen::Vector3f mpccontrol()
     mpc_sim_odom.publish(odom_sim);
   }
   if (sim_type_!="sim_st"){
-    std::cout<<"target acc x: "<<tarAcc(0)<<"y: "<<tarAcc(1)<<"z: "<<tarAcc(2)<<"\n";
+    std::cout<<"target acc x: "<<tarAcc(0)<<" y: "<<tarAcc(1)<<" z: "<<tarAcc(2)<<"\n";
   }
   return tarAcc;
 }
