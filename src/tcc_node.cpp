@@ -53,6 +53,7 @@ int horizon_N = 20;
 Eigen::MatrixXd z_reference_(3*200, 1);
 Eigen::VectorXd sim_state_ = Eigen::MatrixXd::Constant(6, 1, 0);
 bool mpc_sim_;
+float thrust_offset_=15.0, thrust_coefficient_=1.7, maximum_thrust_=90, minimum_thrust_=10;
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
@@ -69,14 +70,15 @@ int main(int argc, char** argv){
   }
   nh.getParam("mpc_sim", mpc_sim_);
 
-  if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && sim_type_!="sim_st"){
+  if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && 
+    sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini"){
     ROS_WARN("not good, don't know in simulation or real flight");
     exit(-1);
   }
 
 
   rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("/st_sdk/flight_control_setpoint_generic", 50);
-  if (sim_type_!="rotors"&&sim_type_!="vins_dji"){
+  if (sim_type_!="rotors"&&sim_type_!="vins_dji"&&sim_type_!="vinsfusion_dji_mini"){
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
                                       "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
   } else {
@@ -86,7 +88,7 @@ int main(int argc, char** argv){
 
   mpc_sim_odom = nh.advertise<nav_msgs::Odometry>("mpc_sim_odom", 50);
   ros::Subscriber trajectory_sub;
-  if (sim_type_=="vins_dji"){
+  if (sim_type_=="vins_dji"||sim_type_=="vinsfusion_dji_mini"){
     trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
                                  "/firefly/command/trajectory_true", 10, trajectory_cb);    
   } else {
@@ -329,8 +331,17 @@ void CtrloopCallback(const ros::TimerEvent&)
     } else if (sim_type_=="vins_dji"){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
       rpyrt_msg.thrust.z= 0.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
-    }else {
-      rpyrt_msg.thrust.z = in_loop_cmd.T;
+    }else { //for mini drone dji
+      float _thrust_cmd=thrust_offset_ + in_loop_cmd.T*thrust_coefficient_;
+      if(_thrust_cmd < minimum_thrust_){
+        ROS_WARN("Throttle command is below minimum.. set to minimum");
+        _thrust_cmd = minimum_thrust_;
+      }
+      if(_thrust_cmd > maximum_thrust_){
+        ROS_WARN("Throttle command is too high.. set to max");
+        _thrust_cmd = maximum_thrust_;
+      }      
+      rpyrt_msg.thrust.z = _thrust_cmd;
     }
     if (sim_type_!="vins_st"&&sim_type_!="sim_st"){
       rpyt_command_pub.publish(rpyrt_msg);
@@ -417,6 +428,10 @@ void Paramcallback(tcc::ParamConfig &config, uint32_t level)
     max_roll_pitch_angle_ = config.max_angle_/180*3.1415927;
     max_yaw_rate_ = config.max_yaw_rate_/180*3.1415927;
 
+    thrust_offset_ = config.dji_thrust_offset;  //mq
+    thrust_coefficient_ = config.dji_thrust_coefficient;
+    maximum_thrust_ = config.dji_maximum_thrust;
+    minimum_thrust_ = config.dji_minimum_thrust;
 }
 
 Eigen::Vector3f mpccontrol()
