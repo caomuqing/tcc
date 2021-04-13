@@ -39,7 +39,9 @@ Eigen::Vector3f CtrlEpsilon(1, 1, 1); //tuning parameter
 Eigen::Vector3f CtrlZita(1, 1, 1.1); //damping ratio
 Eigen::Vector3f PosErrorAccumulated_(0, 0, 0);
 Eigen::Vector3f k_I_(0.02, 0.02, 0.15);
-mppi_control::InLoopCmdGen InLoopCmdGen_(0.4); //for st, hover throttle is roughly 40%
+mppi_control::InLoopCmdGen InLoopCmdGen_(0.19); //for st, hover throttle is roughly 40%
+//for mini drone with dji n3, hover throttle is roughly 25-30%
+
 float posErrAccLimit_ = 10.0, acc_xy_limit_=2.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
@@ -53,7 +55,7 @@ int horizon_N = 20;
 Eigen::MatrixXd z_reference_(3*200, 1);
 Eigen::VectorXd sim_state_ = Eigen::MatrixXd::Constant(6, 1, 0);
 bool mpc_sim_;
-float thrust_offset_=15.0, thrust_coefficient_=1.7, maximum_thrust_=90, minimum_thrust_=10;
+float thrust_offset_=1.5, thrust_coefficient_=70, maximum_thrust_=90, minimum_thrust_=10;
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
@@ -71,14 +73,15 @@ int main(int argc, char** argv){
   nh.getParam("mpc_sim", mpc_sim_);
 
   if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && 
-    sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini"){
+    sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini" && sim_type_!="vicon_dji_mini"){
     ROS_WARN("not good, don't know in simulation or real flight");
     exit(-1);
   }
 
 
   rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("/st_sdk/flight_control_setpoint_generic", 50);
-  if (sim_type_!="rotors"&&sim_type_!="vins_dji"&&sim_type_!="vinsfusion_dji_mini"){
+  if (sim_type_!="rotors"&&sim_type_!="vins_dji"&&sim_type_!="vinsfusion_dji_mini" && 
+      sim_type_!="vicon_dji_mini"){
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
                                       "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
   } else {
@@ -88,7 +91,7 @@ int main(int argc, char** argv){
 
   mpc_sim_odom = nh.advertise<nav_msgs::Odometry>("mpc_sim_odom", 50);
   ros::Subscriber trajectory_sub;
-  if (sim_type_=="vins_dji"||sim_type_=="vinsfusion_dji_mini"){
+  if (sim_type_=="vins_dji"||sim_type_=="vinsfusion_dji_mini" || sim_type_=="vicon_dji_mini"){
     trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
                                  "/firefly/command/trajectory_true", 10, trajectory_cb);    
   } else {
@@ -143,7 +146,7 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
   geoPt3toEigenVec3(msg->pose.pose.position, current_.pos);
 
   // transforming velocity
-  if (sim_type_!="rotors"){ //for real flight or using DJI simulator, velocity is already in global ENU frame
+  if (sim_type_!="rotors" && sim_type_!="vicon_dji_mini"){ //for real flight or using DJI simulator, velocity is already in global ENU frame
     geoVec3toEigenVec3(msg->twist.twist.linear, current_.vel);
   } else { //for simulation with ROTORS, convert body frame velocity to global frame
     Eigen::Quaternionf orientation_W_B(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, 
