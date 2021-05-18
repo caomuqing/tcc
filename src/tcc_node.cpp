@@ -40,8 +40,7 @@ Eigen::Vector3f CtrlZita(1, 1, 1.1); //damping ratio
 Eigen::Vector3f PosErrorAccumulated_(0, 0, 0);
 Eigen::Vector3f k_I_(0.02, 0.02, 0.15);
 mppi_control::InLoopCmdGen InLoopCmdGen_(0.19); //for st, hover throttle is roughly 40%
-//for mini drone with dji n3, hover throttle is roughly 25-30%
-
+//for mini drone with dji n3, hover throttle is roughly 19%
 float posErrAccLimit_ = 10.0, acc_xy_limit_=2.0;
 float k_p_yaw_=0.2, k_I_yaw_=0.2;
 float yawErrorAccum_ = 0, yawErrorAccumLim_ = 3.1415927;
@@ -56,6 +55,7 @@ Eigen::MatrixXd z_reference_(3*200, 1);
 Eigen::VectorXd sim_state_ = Eigen::MatrixXd::Constant(6, 1, 0);
 bool mpc_sim_;
 float thrust_offset_=1.5, thrust_coefficient_=70, maximum_thrust_=90, minimum_thrust_=10;
+bool thrust_control_=true;
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
@@ -71,6 +71,7 @@ int main(int argc, char** argv){
     exit(-1);
   }
   nh.getParam("mpc_sim", mpc_sim_);
+  nh.getParam("enable_thrust_control", thrust_control_);
 
   if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && 
     sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini" && sim_type_!="vicon_dji_mini"){
@@ -331,7 +332,7 @@ void CtrloopCallback(const ros::TimerEvent&)
     rpyrt_msg.thrust.y = 0;
     if (sim_type_=="rotors"){  //for simulation with ROTORS only
       rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
-    } else if (sim_type_=="vins_dji"){
+    } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
       rpyrt_msg.thrust.z= 0.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
     }else { //for mini drone dji
