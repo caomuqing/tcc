@@ -334,7 +334,7 @@ void CtrloopCallback(const ros::TimerEvent&)
       rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
     } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
-      rpyrt_msg.thrust.z= 0.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
+      rpyrt_msg.thrust.z= 1.0*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
     }else { //for mini drone dji
       float _thrust_cmd=thrust_offset_ + in_loop_cmd.T*thrust_coefficient_;
       if(_thrust_cmd < minimum_thrust_){

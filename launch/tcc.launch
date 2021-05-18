@@ -6,7 +6,7 @@
       <param name="frame_id" type="string" value="world" />
       <param name="sim_type" type="string" value="vinsfusion_dji_mini" />
       <param name="mpc_sim" type="bool" value="false" />
-      <param name="enable_thrust_control" type="bool" value="true" />      
+      <param name="enable_thrust_control" type="bool" value="false" />      
 <!--       <remap from="/vins_estimator/odometry" to="/msf_core/odometry" />  
  -->  </node>
 </launch>
