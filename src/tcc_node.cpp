@@ -74,7 +74,8 @@ int main(int argc, char** argv){
   nh.getParam("enable_thrust_control", thrust_control_);
 
   if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && 
-    sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini" && sim_type_!="vicon_dji_mini"){
+    sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini" && sim_type_!="vicon_dji_mini"
+    && sim_type_!="unity"){
     ROS_WARN("not good, don't know in simulation or real flight");
     exit(-1);
   }
@@ -82,7 +83,7 @@ int main(int argc, char** argv){
 
   rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("/st_sdk/flight_control_setpoint_generic", 50);
   if (sim_type_!="rotors"&&sim_type_!="vins_dji"&&sim_type_!="vinsfusion_dji_mini" && 
-      sim_type_!="vicon_dji_mini"){
+      sim_type_!="vicon_dji_mini" && sim_type_!="unity"){
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
                                       "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
   } else {
@@ -330,11 +331,12 @@ void CtrloopCallback(const ros::TimerEvent&)
     rpyrt_msg.yaw_rate = yaw_rate_tmp;
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
-    if (sim_type_=="rotors"){  //for simulation with ROTORS only
+    if (sim_type_=="rotors"||sim_type_=="unity"){  //for simulation with ROTORS only
       rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
-    } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)){
+    } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)||
+      (sim_type_=="vicon_dji_mini"&&!thrust_control_)){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
-      rpyrt_msg.thrust.z= 1.0*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
+      rpyrt_msg.thrust.z= 1.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
     }else { //for mini drone dji
       float _thrust_cmd=thrust_offset_ + in_loop_cmd.T*thrust_coefficient_;
       if(_thrust_cmd < minimum_thrust_){
