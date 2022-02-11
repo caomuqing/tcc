@@ -60,18 +60,19 @@ bool thrust_control_=true;
 int main(int argc, char** argv){
   ros::init(argc, argv, "tcc");
 
-  ros::NodeHandle nh("~");
+  ros::NodeHandle nh;
+  ros::NodeHandle pnh("~"); //node handle just for getting param
 
   dynamic_reconfigure::Server<tcc::ParamConfig> server;
   dynamic_reconfigure::Server<tcc::ParamConfig>::CallbackType externalfunction;
   externalfunction = boost::bind(&Paramcallback, _1, _2);
   server.setCallback(externalfunction);
-  if (!nh.getParam("sim_type", sim_type_)){
+  if (!pnh.getParam("sim_type", sim_type_)){
     ROS_WARN("Don't have sim type parameter. Exiting");
     exit(-1);
   }
-  nh.getParam("mpc_sim", mpc_sim_);
-  nh.getParam("enable_thrust_control", thrust_control_);
+  pnh.getParam("mpc_sim", mpc_sim_);
+  pnh.getParam("enable_thrust_control", thrust_control_);
 
   if(sim_type_!="rotors" && sim_type_!="dji" && sim_type_!="vins_dji" && sim_type_!="vins_st" && 
     sim_type_!="sim_st" && sim_type_!="vinsfusion_dji_mini" && sim_type_!="vicon_dji_mini"
@@ -81,28 +82,28 @@ int main(int argc, char** argv){
   }
 
 
-  rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("/st_sdk/flight_control_setpoint_generic", 50);
+  rpyh_command_pub = nh.advertise<sensor_msgs::Joy>("st_sdk/flight_control_setpoint_generic", 50);
   if (sim_type_!="rotors"&&sim_type_!="vins_dji"&&sim_type_!="vinsfusion_dji_mini" && 
       sim_type_!="vicon_dji_mini" && sim_type_!="unity"){
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
-                                      "/firefly/command/roll_pitch_yawrate_thrust1", 50);    
+                                      "command/roll_pitch_yawrate_thrust1", 50);    
   } else {
     rpyt_command_pub = nh.advertise<mav_msgs::RollPitchYawrateThrust>(
-                                      "/firefly/command/roll_pitch_yawrate_thrust", 50);        
+                                      "command/roll_pitch_yawrate_thrust", 50);        
   }
 
   mpc_sim_odom = nh.advertise<nav_msgs::Odometry>("mpc_sim_odom", 50);
   ros::Subscriber trajectory_sub;
   if (sim_type_=="vins_dji"||sim_type_=="vinsfusion_dji_mini" || sim_type_=="vicon_dji_mini"){
     trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
-                                 "/firefly/command/trajectory_true", 10, trajectory_cb);    
+                                 "command/trajectory_true", 10, trajectory_cb);    
   } else {
     trajectory_sub = nh.subscribe<trajectory_msgs::MultiDOFJointTrajectory>(
-                                 "/firefly/command/trajectory", 10, trajectory_cb);     
+                                 "command/trajectory", 10, trajectory_cb);     
   }
-  ros::Subscriber odom_sub = nh.subscribe<nav_msgs::Odometry>("/vins_estimator/odometry", 10, odom_cb);
+  ros::Subscriber odom_sub = nh.subscribe<nav_msgs::Odometry>("vins_estimator/odometry", 10, odom_cb);
 
-  ros::Subscriber offset_sub = nh.subscribe<geometry_msgs::Vector3>("/NTU_internal/offsets", 10, offsets_cb);
+  ros::Subscriber offset_sub = nh.subscribe<geometry_msgs::Vector3>("NTU_internal/offsets", 10, offsets_cb);
 
   ros::Timer timer = nh.createTimer(ros::Duration(1.0/20), CtrloopCallback);
 
