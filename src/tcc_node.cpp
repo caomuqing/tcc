@@ -199,7 +199,7 @@ void odom_cb(const nav_msgs::Odometry::ConstPtr& msg)
                                           msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);    
     get_dcm_from_q(current_.R, current_Quat);
   }
-  ROS_INFO_ONCE("Got first odom message!");
+  ROS_INFO_ONCE("TCC Got first odom message!");
 
 }
 
@@ -333,7 +333,7 @@ void CtrloopCallback(const ros::TimerEvent&)
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
     if (sim_type_=="rotors"||sim_type_=="unity"){  //for simulation with ROTORS only
-      rpyrt_msg.thrust.z = in_loop_cmd.T*43.75;      
+      rpyrt_msg.thrust.z = in_loop_cmd.T*70; //70 for unity, 43.75 for rotors      
     } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)||
       (sim_type_=="vicon_dji_mini"&&!thrust_control_)){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
