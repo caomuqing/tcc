@@ -332,9 +332,11 @@ void CtrloopCallback(const ros::TimerEvent&)
     rpyrt_msg.yaw_rate = yaw_rate_tmp;
     rpyrt_msg.thrust.x = 0;
     rpyrt_msg.thrust.y = 0;
-    if (sim_type_=="rotors"||sim_type_=="unity"){  //for simulation with ROTORS only
-      rpyrt_msg.thrust.z = in_loop_cmd.T*70; //70 for unity, 43.75 for rotors      
-    } else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)||
+    if (sim_type_=="rotors"){  //for simulation with ROTORS only
+      rpyrt_msg.thrust.z = in_loop_cmd.T*43.75; //70 for unity, 43.75 for rotors      
+    }else if (sim_type_=="unity") {
+      rpyrt_msg.thrust.z = in_loop_cmd.T*70; //70 for unity, 43.75 for rotors 
+    }else if (sim_type_=="vins_dji"||(sim_type_=="vinsfusion_dji_mini"&&!thrust_control_)||
       (sim_type_=="vicon_dji_mini"&&!thrust_control_)){
       //rpyrt_msg.thrust.z= cmd_.pos(2); //for dji m600
       rpyrt_msg.thrust.z= 1.5*(cmd_.pos(2)-current_.pos(2))+cmd_.vel(2); //for dji m600 velocity control instead
